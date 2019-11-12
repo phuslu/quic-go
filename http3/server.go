@@ -237,6 +237,7 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 		return newStreamError(errorGeneralProtocolError, err)
 	}
 
+	*req.TLS = sess.ConnectionState()
 	req.RemoteAddr = sess.RemoteAddr().String()
 	req.Body = newRequestBody(str, onFrameError)
 
@@ -246,7 +247,10 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 		s.logger.Infof("%s %s%s", req.Method, req.Host, req.RequestURI)
 	}
 
-	req = req.WithContext(str.Context())
+	ctx := str.Context()
+	ctx = context.WithValue(ctx, http.ServerContextKey, s)
+	ctx = context.WithValue(ctx, http.LocalAddrContextKey, sess.LocalAddr())
+	req = req.WithContext(ctx)
 	responseWriter := newResponseWriter(str, s.logger)
 	handler := s.Handler
 	if handler == nil {
