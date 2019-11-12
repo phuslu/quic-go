@@ -6,17 +6,16 @@ import (
 	"fmt"
 	mrand "math/rand"
 
-	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/qerr"
-	"github.com/lucas-clemente/quic-go/internal/utils"
-	"github.com/lucas-clemente/quic-go/internal/wire"
+	"github.com/phuslu/quic-go/internal/protocol"
+	"github.com/phuslu/quic-go/internal/utils"
+	"github.com/phuslu/quic-go/internal/wire"
 )
 
 type connIDManager struct {
 	queue utils.NewConnectionIDList
 
 	activeSequenceNumber      uint64
-	highestRetired            uint64
+	retiredPriorTo            uint64
 	activeConnectionID        protocol.ConnectionID
 	activeStatelessResetToken *[16]byte
 
@@ -58,7 +57,7 @@ func (h *connIDManager) Add(f *wire.NewConnectionIDFrame) error {
 		return err
 	}
 	if h.queue.Len() >= protocol.MaxActiveConnectionIDs {
-		return qerr.ConnectionIDLimitError
+		h.updateConnectionID()
 	}
 	return nil
 }
@@ -66,7 +65,7 @@ func (h *connIDManager) Add(f *wire.NewConnectionIDFrame) error {
 func (h *connIDManager) add(f *wire.NewConnectionIDFrame) error {
 	// If the NEW_CONNECTION_ID frame is reordered, such that its sequenece number
 	// was already retired, send the RETIRE_CONNECTION_ID frame immediately.
-	if f.SequenceNumber < h.highestRetired {
+	if f.SequenceNumber < h.retiredPriorTo {
 		h.queueControlFrame(&wire.RetireConnectionIDFrame{
 			SequenceNumber: f.SequenceNumber,
 		})
@@ -75,7 +74,7 @@ func (h *connIDManager) add(f *wire.NewConnectionIDFrame) error {
 
 	// Retire elements in the queue.
 	// Doesn't retire the active connection ID.
-	if f.RetirePriorTo > h.highestRetired {
+	if f.RetirePriorTo > h.retiredPriorTo {
 		var next *utils.NewConnectionIDElement
 		for el := h.queue.Front(); el != nil; el = next {
 			if el.Value.SequenceNumber >= f.RetirePriorTo {
@@ -87,11 +86,7 @@ func (h *connIDManager) add(f *wire.NewConnectionIDFrame) error {
 			})
 			h.queue.Remove(el)
 		}
-		h.highestRetired = f.RetirePriorTo
-	}
-
-	if f.SequenceNumber == h.activeSequenceNumber {
-		return nil
+		h.retiredPriorTo = f.RetirePriorTo
 	}
 
 	// insert a new element at the end
@@ -136,11 +131,9 @@ func (h *connIDManager) updateConnectionID() {
 	h.queueControlFrame(&wire.RetireConnectionIDFrame{
 		SequenceNumber: h.activeSequenceNumber,
 	})
-	h.highestRetired = utils.MaxUint64(h.highestRetired, h.activeSequenceNumber)
 	if h.activeStatelessResetToken != nil {
 		h.retireStatelessResetToken(*h.activeStatelessResetToken)
 	}
-
 	front := h.queue.Remove(h.queue.Front())
 	h.activeSequenceNumber = front.SequenceNumber
 	h.activeConnectionID = front.ConnectionID

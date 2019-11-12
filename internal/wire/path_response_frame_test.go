@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/lucas-clemente/quic-go/internal/protocol"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/phuslu/quic-go/internal/protocol"
 )
 
 var _ = Describe("PATH_RESPONSE frame", func() {

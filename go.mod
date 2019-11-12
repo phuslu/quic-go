@@ -1,4 +1,4 @@
-module github.com/lucas-clemente/quic-go
+module github.com/phuslu/quic-go
 
 go 1.13
 
@@ -7,6 +7,7 @@ require (
 	github.com/cheekybits/genny v1.0.0
 	github.com/golang/mock v1.2.0
 	github.com/golang/protobuf v1.3.0
+	github.com/lucas-clemente/quic-go v0.14.1
 	github.com/marten-seemann/chacha20 v0.2.0
 	github.com/marten-seemann/qpack v0.1.0
 	github.com/marten-seemann/qtls v0.5.0

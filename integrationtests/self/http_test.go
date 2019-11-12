@@ -6,17 +6,15 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"io"
 	"io/ioutil"
-	"net"
 	"net/http"
-	"strconv"
 	"time"
 
-	quic "github.com/lucas-clemente/quic-go"
-	"github.com/lucas-clemente/quic-go/http3"
-	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/testdata"
+	quic "github.com/phuslu/quic-go"
+	"github.com/phuslu/quic-go/http3"
+	"github.com/phuslu/quic-go/integrationtests/tools/testserver"
+	"github.com/phuslu/quic-go/internal/protocol"
+	"github.com/phuslu/quic-go/internal/testdata"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -29,74 +27,16 @@ type streamCancelError interface {
 }
 
 var _ = Describe("HTTP tests", func() {
-	var (
-		mux            *http.ServeMux
-		client         *http.Client
-		server         *http3.Server
-		stoppedServing chan struct{}
-		port           string
-	)
+	var client *http.Client
 
 	versions := protocol.SupportedVersions
 
 	BeforeEach(func() {
-		mux = http.NewServeMux()
-		mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
-			defer GinkgoRecover()
-			io.WriteString(w, "Hello, World!\n") // don't check the error here. Stream may be reset.
-		})
-
-		mux.HandleFunc("/prdata", func(w http.ResponseWriter, r *http.Request) {
-			defer GinkgoRecover()
-			sl := r.URL.Query().Get("len")
-			if sl != "" {
-				var err error
-				l, err := strconv.Atoi(sl)
-				Expect(err).NotTo(HaveOccurred())
-				w.Write(GeneratePRData(l)) // don't check the error here. Stream may be reset.
-			} else {
-				w.Write(PRData) // don't check the error here. Stream may be reset.
-			}
-		})
-
-		mux.HandleFunc("/prdatalong", func(w http.ResponseWriter, r *http.Request) {
-			defer GinkgoRecover()
-			w.Write(PRDataLong) // don't check the error here. Stream may be reset.
-		})
-
-		mux.HandleFunc("/echo", func(w http.ResponseWriter, r *http.Request) {
-			defer GinkgoRecover()
-			body, err := ioutil.ReadAll(r.Body)
-			Expect(err).NotTo(HaveOccurred())
-			w.Write(body) // don't check the error here. Stream may be reset.
-		})
-
-		server = &http3.Server{
-			Server: &http.Server{
-				Handler:   mux,
-				TLSConfig: testdata.GetTLSConfig(),
-			},
-			QuicConfig: &quic.Config{Versions: versions},
-		}
-
-		addr, err := net.ResolveUDPAddr("udp", "0.0.0.0:0")
-		Expect(err).NotTo(HaveOccurred())
-		conn, err := net.ListenUDP("udp", addr)
-		Expect(err).NotTo(HaveOccurred())
-		port = strconv.Itoa(conn.LocalAddr().(*net.UDPAddr).Port)
-
-		stoppedServing = make(chan struct{})
-
-		go func() {
-			defer GinkgoRecover()
-			server.Serve(conn)
-			close(stoppedServing)
-		}()
+		testserver.StartQuicServer(versions)
 	})
 
 	AfterEach(func() {
-		Expect(server.Close()).NotTo(HaveOccurred())
-		Eventually(stoppedServing).Should(BeClosed())
+		testserver.StopQuicServer()
 	})
 
 	for _, v := range versions {
@@ -111,15 +51,15 @@ var _ = Describe("HTTP tests", func() {
 						},
 						DisableCompression: true,
 						QuicConfig: &quic.Config{
-							Versions:       []protocol.VersionNumber{version},
-							MaxIdleTimeout: 10 * time.Second,
+							Versions:    []protocol.VersionNumber{version},
+							IdleTimeout: 10 * time.Second,
 						},
 					},
 				}
 			})
 
 			It("downloads a hello", func() {
-				resp, err := client.Get("https://localhost:" + port + "/hello")
+				resp, err := client.Get("https://localhost:" + testserver.Port() + "/hello")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(200))
 				body, err := ioutil.ReadAll(gbytes.TimeoutReader(resp.Body, 3*time.Second))
@@ -129,14 +69,14 @@ var _ = Describe("HTTP tests", func() {
 
 			It("sets and gets request headers", func() {
 				handlerCalled := make(chan struct{})
-				mux.HandleFunc("/headers/request", func(w http.ResponseWriter, r *http.Request) {
+				http.HandleFunc("/headers/request", func(w http.ResponseWriter, r *http.Request) {
 					defer GinkgoRecover()
 					Expect(r.Header.Get("foo")).To(Equal("bar"))
 					Expect(r.Header.Get("lorem")).To(Equal("ipsum"))
 					close(handlerCalled)
 				})
 
-				req, err := http.NewRequest(http.MethodGet, "https://localhost:"+port+"/headers/request", nil)
+				req, err := http.NewRequest(http.MethodGet, "https://localhost:"+testserver.Port()+"/headers/request", nil)
 				Expect(err).ToNot(HaveOccurred())
 				req.Header.Set("foo", "bar")
 				req.Header.Set("lorem", "ipsum")
@@ -147,13 +87,13 @@ var _ = Describe("HTTP tests", func() {
 			})
 
 			It("sets and gets response headers", func() {
-				mux.HandleFunc("/headers/response", func(w http.ResponseWriter, r *http.Request) {
+				http.HandleFunc("/headers/response", func(w http.ResponseWriter, r *http.Request) {
 					defer GinkgoRecover()
 					w.Header().Set("foo", "bar")
 					w.Header().Set("lorem", "ipsum")
 				})
 
-				resp, err := client.Get("https://localhost:" + port + "/headers/response")
+				resp, err := client.Get("https://localhost:" + testserver.Port() + "/headers/response")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(200))
 				Expect(resp.Header.Get("foo")).To(Equal("bar"))
@@ -161,28 +101,28 @@ var _ = Describe("HTTP tests", func() {
 			})
 
 			It("downloads a small file", func() {
-				resp, err := client.Get("https://localhost:" + port + "/prdata")
+				resp, err := client.Get("https://localhost:" + testserver.Port() + "/prdata")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(200))
 				body, err := ioutil.ReadAll(gbytes.TimeoutReader(resp.Body, 5*time.Second))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(body).To(Equal(PRData))
+				Expect(body).To(Equal(testserver.PRData))
 			})
 
 			It("downloads a large file", func() {
-				resp, err := client.Get("https://localhost:" + port + "/prdatalong")
+				resp, err := client.Get("https://localhost:" + testserver.Port() + "/prdatalong")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(200))
 				body, err := ioutil.ReadAll(gbytes.TimeoutReader(resp.Body, 20*time.Second))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(body).To(Equal(PRDataLong))
+				Expect(body).To(Equal(testserver.PRDataLong))
 			})
 
 			It("downloads many hellos", func() {
 				const num = 150
 
 				for i := 0; i < num; i++ {
-					resp, err := client.Get("https://localhost:" + port + "/hello")
+					resp, err := client.Get("https://localhost:" + testserver.Port() + "/hello")
 					Expect(err).ToNot(HaveOccurred())
 					Expect(resp.StatusCode).To(Equal(200))
 					body, err := ioutil.ReadAll(gbytes.TimeoutReader(resp.Body, 3*time.Second))
@@ -195,7 +135,7 @@ var _ = Describe("HTTP tests", func() {
 				const num = 150
 
 				for i := 0; i < num; i++ {
-					resp, err := client.Get("https://localhost:" + port + "/prdata")
+					resp, err := client.Get("https://localhost:" + testserver.Port() + "/prdata")
 					Expect(err).ToNot(HaveOccurred())
 					Expect(resp.StatusCode).To(Equal(200))
 					Expect(resp.Body.Close()).To(Succeed())
@@ -204,7 +144,7 @@ var _ = Describe("HTTP tests", func() {
 
 			It("posts a small message", func() {
 				resp, err := client.Post(
-					"https://localhost:"+port+"/echo",
+					"https://localhost:"+testserver.Port()+"/echo",
 					"text/plain",
 					bytes.NewReader([]byte("Hello, world!")),
 				)
@@ -217,19 +157,19 @@ var _ = Describe("HTTP tests", func() {
 
 			It("uploads a file", func() {
 				resp, err := client.Post(
-					"https://localhost:"+port+"/echo",
+					"https://localhost:"+testserver.Port()+"/echo",
 					"text/plain",
-					bytes.NewReader(PRData),
+					bytes.NewReader(testserver.PRData),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(200))
 				body, err := ioutil.ReadAll(gbytes.TimeoutReader(resp.Body, 5*time.Second))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(body).To(Equal(PRData))
+				Expect(body).To(Equal(testserver.PRData))
 			})
 
 			It("uses gzip compression", func() {
-				mux.HandleFunc("/gzipped/hello", func(w http.ResponseWriter, r *http.Request) {
+				http.HandleFunc("/gzipped/hello", func(w http.ResponseWriter, r *http.Request) {
 					defer GinkgoRecover()
 					Expect(r.Header.Get("Accept-Encoding")).To(Equal("gzip"))
 					w.Header().Set("Content-Encoding", "gzip")
@@ -241,7 +181,7 @@ var _ = Describe("HTTP tests", func() {
 				})
 
 				client.Transport.(*http3.RoundTripper).DisableCompression = false
-				resp, err := client.Get("https://localhost:" + port + "/gzipped/hello")
+				resp, err := client.Get("https://localhost:" + testserver.Port() + "/gzipped/hello")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(200))
 				Expect(resp.Uncompressed).To(BeTrue())
@@ -253,7 +193,7 @@ var _ = Describe("HTTP tests", func() {
 
 			It("cancels requests", func() {
 				handlerCalled := make(chan struct{})
-				mux.HandleFunc("/cancel", func(w http.ResponseWriter, r *http.Request) {
+				http.HandleFunc("/cancel", func(w http.ResponseWriter, r *http.Request) {
 					defer GinkgoRecover()
 					defer close(handlerCalled)
 					for {
@@ -268,7 +208,7 @@ var _ = Describe("HTTP tests", func() {
 					}
 				})
 
-				req, err := http.NewRequest(http.MethodGet, "https://localhost:"+port+"/cancel", nil)
+				req, err := http.NewRequest(http.MethodGet, "https://localhost:"+testserver.Port()+"/cancel", nil)
 				Expect(err).ToNot(HaveOccurred())
 				ctx, cancel := context.WithCancel(context.Background())
 				req = req.WithContext(ctx)

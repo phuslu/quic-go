@@ -13,12 +13,12 @@ import (
 	"time"
 
 	gomock "github.com/golang/mock/gomock"
-	"github.com/lucas-clemente/quic-go/internal/congestion"
-	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/qerr"
-	"github.com/lucas-clemente/quic-go/internal/testdata"
-	"github.com/lucas-clemente/quic-go/internal/utils"
 	"github.com/marten-seemann/qtls"
+	"github.com/phuslu/quic-go/internal/congestion"
+	"github.com/phuslu/quic-go/internal/protocol"
+	"github.com/phuslu/quic-go/internal/qerr"
+	"github.com/phuslu/quic-go/internal/testdata"
+	"github.com/phuslu/quic-go/internal/utils"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"

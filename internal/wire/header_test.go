@@ -5,9 +5,9 @@ import (
 	"encoding/binary"
 	"io"
 
-	"github.com/lucas-clemente/quic-go/internal/protocol"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/phuslu/quic-go/internal/protocol"
 )
 
 var _ = Describe("Header Parsing", func() {

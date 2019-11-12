@@ -7,8 +7,9 @@ import (
 	"net"
 	"sync"
 
-	quic "github.com/lucas-clemente/quic-go"
-	"github.com/lucas-clemente/quic-go/internal/protocol"
+	quic "github.com/phuslu/quic-go"
+	"github.com/phuslu/quic-go/integrationtests/tools/testserver"
+	"github.com/phuslu/quic-go/internal/protocol"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -48,7 +49,7 @@ var _ = Describe("Bidirectional streams", func() {
 				for i := 0; i < numStreams; i++ {
 					str, err := sess.OpenStreamSync(context.Background())
 					Expect(err).ToNot(HaveOccurred())
-					data := GeneratePRData(25 * i)
+					data := testserver.GeneratePRData(25 * i)
 					go func() {
 						defer GinkgoRecover()
 						_, err := str.Write(data)

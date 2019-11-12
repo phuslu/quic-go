@@ -14,10 +14,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lucas-clemente/quic-go"
-	"github.com/lucas-clemente/quic-go/internal/utils"
 	"github.com/marten-seemann/qpack"
 	"github.com/onsi/ginkgo"
+	"github.com/phuslu/quic-go"
+	"github.com/phuslu/quic-go/internal/utils"
 )
 
 // allows mocking of quic.Listen and quic.ListenAddr

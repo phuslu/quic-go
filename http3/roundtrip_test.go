@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	quic "github.com/lucas-clemente/quic-go"
-	mockquic "github.com/lucas-clemente/quic-go/internal/mocks/quic"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	quic "github.com/phuslu/quic-go"
+	mockquic "github.com/phuslu/quic-go/internal/mocks/quic"
 )
 
 type mockClient struct {

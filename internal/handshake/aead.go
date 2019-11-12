@@ -4,8 +4,8 @@ import (
 	"crypto/cipher"
 	"encoding/binary"
 
-	"github.com/lucas-clemente/quic-go/internal/protocol"
 	"github.com/marten-seemann/qtls"
+	"github.com/phuslu/quic-go/internal/protocol"
 )
 
 func createAEAD(suite *qtls.CipherSuiteTLS13, trafficSecret []byte) cipher.AEAD {

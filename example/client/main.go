@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/lucas-clemente/quic-go/http3"
-	"github.com/lucas-clemente/quic-go/internal/testdata"
-	"github.com/lucas-clemente/quic-go/internal/utils"
+	"github.com/phuslu/quic-go/http3"
+	"github.com/phuslu/quic-go/internal/testdata"
+	"github.com/phuslu/quic-go/internal/utils"
 )
 
 func main() {

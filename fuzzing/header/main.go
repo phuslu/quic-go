@@ -8,8 +8,8 @@ import (
 	"math/rand"
 	"os"
 
-	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/wire"
+	"github.com/phuslu/quic-go/internal/protocol"
+	"github.com/phuslu/quic-go/internal/wire"
 )
 
 const version = protocol.VersionTLS

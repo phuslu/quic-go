@@ -6,11 +6,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/lucas-clemente/quic-go/internal/congestion"
-	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/utils"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/phuslu/quic-go/internal/congestion"
+	"github.com/phuslu/quic-go/internal/protocol"
+	"github.com/phuslu/quic-go/internal/utils"
 )
 
 var _ = Describe("Updatable AEAD", func() {

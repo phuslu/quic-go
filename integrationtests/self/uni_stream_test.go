@@ -7,8 +7,9 @@ import (
 	"net"
 	"sync"
 
-	quic "github.com/lucas-clemente/quic-go"
-	"github.com/lucas-clemente/quic-go/internal/protocol"
+	quic "github.com/phuslu/quic-go"
+	"github.com/phuslu/quic-go/integrationtests/tools/testserver"
+	"github.com/phuslu/quic-go/internal/protocol"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -36,7 +37,7 @@ var _ = Describe("Unidirectional Streams", func() {
 	})
 
 	dataForStream := func(id protocol.StreamID) []byte {
-		return GeneratePRData(10 * int(id))
+		return testserver.GeneratePRData(10 * int(id))
 	}
 
 	runSendingPeer := func(sess quic.Session) {

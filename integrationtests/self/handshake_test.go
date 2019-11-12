@@ -7,12 +7,12 @@ import (
 	"net"
 	"time"
 
-	quic "github.com/lucas-clemente/quic-go"
-	"github.com/lucas-clemente/quic-go/integrationtests/tools/israce"
-	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/qerr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	quic "github.com/phuslu/quic-go"
+	"github.com/phuslu/quic-go/integrationtests/tools/israce"
+	"github.com/phuslu/quic-go/internal/protocol"
+	"github.com/phuslu/quic-go/internal/qerr"
 )
 
 type versioner interface {

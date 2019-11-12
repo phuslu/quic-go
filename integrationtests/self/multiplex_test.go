@@ -8,8 +8,10 @@ import (
 	"runtime"
 	"time"
 
-	quic "github.com/lucas-clemente/quic-go"
-	"github.com/lucas-clemente/quic-go/internal/protocol"
+	quic "github.com/phuslu/quic-go"
+	"github.com/phuslu/quic-go/integrationtests/tools/testlog"
+	"github.com/phuslu/quic-go/integrationtests/tools/testserver"
+	"github.com/phuslu/quic-go/internal/protocol"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -33,7 +35,7 @@ var _ = Describe("Multiplexing", func() {
 							str, err := sess.OpenStream()
 							Expect(err).ToNot(HaveOccurred())
 							defer str.Close()
-							_, err = str.Write(PRData)
+							_, err = str.Write(testserver.PRData)
 							Expect(err).ToNot(HaveOccurred())
 						}()
 					}
@@ -54,7 +56,7 @@ var _ = Describe("Multiplexing", func() {
 				Expect(err).ToNot(HaveOccurred())
 				data, err := ioutil.ReadAll(str)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(data).To(Equal(PRData))
+				Expect(data).To(Equal(testserver.PRData))
 			}
 
 			Context("multiplexing clients on the same conn", func() {
@@ -92,7 +94,7 @@ var _ = Describe("Multiplexing", func() {
 						close(done2)
 					}()
 					timeout := 30 * time.Second
-					if debugLog() {
+					if testlog.Debug() {
 						timeout = time.Minute
 					}
 					Eventually(done1, timeout).Should(BeClosed())
@@ -126,7 +128,7 @@ var _ = Describe("Multiplexing", func() {
 						close(done2)
 					}()
 					timeout := 30 * time.Second
-					if debugLog() {
+					if testlog.Debug() {
 						timeout = time.Minute
 					}
 					Eventually(done1, timeout).Should(BeClosed())
@@ -156,7 +158,7 @@ var _ = Describe("Multiplexing", func() {
 						close(done)
 					}()
 					timeout := 30 * time.Second
-					if debugLog() {
+					if testlog.Debug() {
 						timeout = time.Minute
 					}
 					Eventually(done, timeout).Should(BeClosed())
@@ -209,7 +211,7 @@ var _ = Describe("Multiplexing", func() {
 						close(done2)
 					}()
 					timeout := 30 * time.Second
-					if debugLog() {
+					if testlog.Debug() {
 						timeout = time.Minute
 					}
 					Eventually(done1, timeout).Should(BeClosed())

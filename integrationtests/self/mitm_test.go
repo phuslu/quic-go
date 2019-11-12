@@ -11,14 +11,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	quic "github.com/lucas-clemente/quic-go"
-	quicproxy "github.com/lucas-clemente/quic-go/integrationtests/tools/proxy"
-	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/qerr"
-	"github.com/lucas-clemente/quic-go/internal/testutils"
-	"github.com/lucas-clemente/quic-go/internal/wire"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	quic "github.com/phuslu/quic-go"
+	quicproxy "github.com/phuslu/quic-go/integrationtests/tools/proxy"
+	"github.com/phuslu/quic-go/integrationtests/tools/testserver"
+	"github.com/phuslu/quic-go/internal/protocol"
+	"github.com/phuslu/quic-go/internal/qerr"
+	"github.com/phuslu/quic-go/internal/testutils"
+	"github.com/phuslu/quic-go/internal/wire"
 )
 
 var _ = Describe("MITM test", func() {
@@ -49,7 +50,7 @@ var _ = Describe("MITM test", func() {
 					Expect(err).ToNot(HaveOccurred())
 					str, err := serverSess.OpenUniStream()
 					Expect(err).ToNot(HaveOccurred())
-					_, err = str.Write(PRData)
+					_, err = str.Write(testserver.PRData)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(str.Close()).To(Succeed())
 				}()
@@ -138,7 +139,7 @@ var _ = Describe("MITM test", func() {
 						Expect(err).ToNot(HaveOccurred())
 						data, err := ioutil.ReadAll(str)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(data).To(Equal(PRData))
+						Expect(data).To(Equal(testserver.PRData))
 						Expect(sess.Close()).To(Succeed())
 					}
 
@@ -184,7 +185,7 @@ var _ = Describe("MITM test", func() {
 					Expect(err).ToNot(HaveOccurred())
 					data, err := ioutil.ReadAll(str)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(data).To(Equal(PRData))
+					Expect(data).To(Equal(testserver.PRData))
 					Expect(sess.Close()).To(Succeed())
 				}
 
@@ -222,7 +223,7 @@ var _ = Describe("MITM test", func() {
 
 					BeforeEach(func() {
 						numCorrupted = 0
-						serverConfig.MaxIdleTimeout = idleTimeout
+						serverConfig.IdleTimeout = idleTimeout
 					})
 
 					AfterEach(func() {

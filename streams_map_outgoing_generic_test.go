@@ -5,10 +5,10 @@ import (
 	"errors"
 
 	"github.com/golang/mock/gomock"
-	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/wire"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/phuslu/quic-go/internal/protocol"
+	"github.com/phuslu/quic-go/internal/wire"
 )
 
 var _ = Describe("Streams Map (outgoing)", func() {

@@ -6,9 +6,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/lucas-clemente/quic-go/internal/protocol"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/phuslu/quic-go/internal/protocol"
 )
 
 var _ = Describe("ACK Frame (for IETF QUIC)", func() {
