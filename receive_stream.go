@@ -3,6 +3,7 @@ package quic
 import (
 	"fmt"
 	"io"
+	"net"
 	"sync"
 	"time"
 
@@ -51,6 +52,7 @@ type receiveStream struct {
 
 	flowController flowcontrol.StreamFlowController
 	version        protocol.VersionNumber
+	laddr, raddr   net.Addr
 }
 
 var _ ReceiveStream = &receiveStream{}
@@ -61,6 +63,7 @@ func newReceiveStream(
 	sender streamSender,
 	flowController flowcontrol.StreamFlowController,
 	version protocol.VersionNumber,
+	laddr, raddr net.Addr,
 ) *receiveStream {
 	return &receiveStream{
 		streamID:       streamID,
@@ -70,6 +73,8 @@ func newReceiveStream(
 		readChan:       make(chan struct{}, 1),
 		finalOffset:    protocol.MaxByteCount,
 		version:        version,
+		laddr:          laddr,
+		raddr:          raddr,
 	}
 }
 

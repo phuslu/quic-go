@@ -102,6 +102,11 @@ type Stream interface {
 	// with the connection. It is equivalent to calling both
 	// SetReadDeadline and SetWriteDeadline.
 	SetDeadline(t time.Time) error
+
+	// LocalAddr returns the local address.
+	LocalAddr() net.Addr
+	// RemoteAddr returns the address of the peer.
+	RemoteAddr() net.Addr
 }
 
 // A ReceiveStream is a unidirectional Receive Stream.

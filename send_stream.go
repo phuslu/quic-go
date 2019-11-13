@@ -3,6 +3,7 @@ package quic
 import (
 	"context"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
@@ -53,7 +54,8 @@ type sendStream struct {
 
 	flowController flowcontrol.StreamFlowController
 
-	version protocol.VersionNumber
+	version      protocol.VersionNumber
+	laddr, raddr net.Addr
 }
 
 var _ SendStream = &sendStream{}
@@ -64,6 +66,7 @@ func newSendStream(
 	sender streamSender,
 	flowController flowcontrol.StreamFlowController,
 	version protocol.VersionNumber,
+	laddr, raddr net.Addr,
 ) *sendStream {
 	s := &sendStream{
 		streamID:       streamID,
@@ -71,6 +74,8 @@ func newSendStream(
 		flowController: flowController,
 		writeChan:      make(chan struct{}, 1),
 		version:        version,
+		laddr:          laddr,
+		raddr:          raddr,
 	}
 	s.ctx, s.ctxCancel = context.WithCancel(context.Background())
 	return s

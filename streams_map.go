@@ -48,6 +48,7 @@ type streamsMap struct {
 	perspective protocol.Perspective
 
 	sender            streamSender
+	laddr, raddr      net.Addr
 	newFlowController func(protocol.StreamID) flowcontrol.StreamFlowController
 
 	outgoingBidiStreams *outgoingBidiStreamsMap
@@ -65,6 +66,7 @@ func newStreamsMap(
 	maxIncomingUniStreams uint64,
 	perspective protocol.Perspective,
 	version protocol.VersionNumber,
+	laddr, raddr net.Addr,
 ) streamManager {
 	m := &streamsMap{
 		perspective:       perspective,
@@ -74,14 +76,14 @@ func newStreamsMap(
 	m.outgoingBidiStreams = newOutgoingBidiStreamsMap(
 		func(num protocol.StreamNum) streamI {
 			id := num.StreamID(protocol.StreamTypeBidi, perspective)
-			return newStream(id, m.sender, m.newFlowController(id), version)
+			return newStream(id, m.sender, m.newFlowController(id), version, laddr, raddr)
 		},
 		sender.queueControlFrame,
 	)
 	m.incomingBidiStreams = newIncomingBidiStreamsMap(
 		func(num protocol.StreamNum) streamI {
 			id := num.StreamID(protocol.StreamTypeBidi, perspective.Opposite())
-			return newStream(id, m.sender, m.newFlowController(id), version)
+			return newStream(id, m.sender, m.newFlowController(id), version, laddr, raddr)
 		},
 		maxIncomingBidiStreams,
 		sender.queueControlFrame,
@@ -89,14 +91,14 @@ func newStreamsMap(
 	m.outgoingUniStreams = newOutgoingUniStreamsMap(
 		func(num protocol.StreamNum) sendStreamI {
 			id := num.StreamID(protocol.StreamTypeUni, perspective)
-			return newSendStream(id, m.sender, m.newFlowController(id), version)
+			return newSendStream(id, m.sender, m.newFlowController(id), version, laddr, raddr)
 		},
 		sender.queueControlFrame,
 	)
 	m.incomingUniStreams = newIncomingUniStreamsMap(
 		func(num protocol.StreamNum) receiveStreamI {
 			id := num.StreamID(protocol.StreamTypeUni, perspective.Opposite())
-			return newReceiveStream(id, m.sender, m.newFlowController(id), version)
+			return newReceiveStream(id, m.sender, m.newFlowController(id), version, laddr, raddr)
 		},
 		maxIncomingUniStreams,
 		sender.queueControlFrame,
