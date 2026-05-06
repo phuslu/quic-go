@@ -123,6 +123,11 @@ func TestBBRTracksBytesInFlight(t *testing.T) {
 
 	bbr.OnCongestionEvent(2, 1000, 1000)
 	require.Zero(t, bbr.bytesInFlight)
+
+	bbr.OnPacketSent(clock.Now(), 1000, 3, 1000, true)
+	require.Equal(t, protocol.ByteCount(1000), bbr.bytesInFlight)
+	bbr.OnPacketDiscarded(3)
+	require.Zero(t, bbr.bytesInFlight)
 }
 
 func TestBBRPacketLoss(t *testing.T) {
@@ -163,6 +168,18 @@ func TestBBRECNDoesNotDiscardBandwidthSample(t *testing.T) {
 	bbr.OnPacketAcked(1, initialMaxDatagramSize, initialMaxDatagramSize, clock.Now())
 
 	require.Greater(t, bbr.BandwidthEstimate(), Bandwidth(0))
+}
+
+func TestBBRApplicationLimited(t *testing.T) {
+	var clock mockClock
+	rttStats := utils.NewRTTStats()
+	initialMaxDatagramSize := protocol.ByteCount(1200)
+
+	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	require.False(t, bbr.sampler.isAppLimited)
+
+	bbr.OnApplicationLimited()
+	require.True(t, bbr.sampler.isAppLimited)
 }
 
 func TestBBRCanSend(t *testing.T) {

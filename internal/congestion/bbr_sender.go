@@ -423,6 +423,14 @@ func (b *bbrSender) OnCongestionEvent(number protocol.PacketNumber, lostBytes pr
 	b.CalculateRecoveryWindow(0, lostBytes)
 }
 
+func (b *bbrSender) OnPacketDiscarded(number protocol.PacketNumber) {
+	b.onBytesRemovedFromFlight(b.sampler.OnPacketDiscarded(number))
+}
+
+func (b *bbrSender) OnApplicationLimited() {
+	b.sampler.OnAppLimited()
+}
+
 func (b *bbrSender) onBytesRemovedFromFlight(bytes protocol.ByteCount) {
 	if bytes >= b.bytesInFlight {
 		b.bytesInFlight = 0

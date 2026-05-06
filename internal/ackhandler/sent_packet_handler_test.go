@@ -1272,10 +1272,12 @@ func TestSentPacketHandlerECN(t *testing.T) {
 	sph.SentPacket(monotime.Now(), sph.PopPacketNumber(protocol.Encryption0RTT), protocol.InvalidPacketNumber, nil, nil, protocol.Encryption0RTT, protocol.ECNCE, 1200, false, false)
 
 	var packets packetTracker
+	congestionPacketNumbers := make(map[protocol.PacketNumber]protocol.PacketNumber)
 	sendPacket := func(t *testing.T, ti monotime.Time, ecn protocol.ECN) protocol.PacketNumber {
 		t.Helper()
 		pn := sph.PopPacketNumber(protocol.Encryption1RTT)
 		ecnHandler.EXPECT().SentPacket(pn, ecn)
+		congestionPacketNumbers[pn] = sph.(*sentPacketHandler).nextCongestionPacketNumber
 		sph.SentPacket(ti, pn, protocol.InvalidPacketNumber, nil, []Frame{packets.NewPingFrame(pn)}, protocol.Encryption1RTT, ecn, 1200, false, false)
 		return pn
 	}
@@ -1345,7 +1347,7 @@ func TestSentPacketHandlerECN(t *testing.T) {
 
 	gomock.InOrder(
 		ecnHandler.EXPECT().HandleNewlyAcked(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(true),
-		cong.EXPECT().OnCongestionEvent(pns[0], protocol.ByteCount(0), gomock.Any()),
+		cong.EXPECT().OnCongestionEvent(congestionPacketNumbers[pns[0]], protocol.ByteCount(0), gomock.Any()),
 	)
 	_, err = sph.ReceivedAck(&wire.AckFrame{AckRanges: ackRanges(pns[0])}, protocol.Encryption1RTT, now.Add(100*time.Millisecond))
 	require.NoError(t, err)

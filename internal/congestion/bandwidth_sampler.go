@@ -102,15 +102,17 @@ func NewBandwidthSample() *BandwidthSample {
 // acknowledged packet right before it was sent (S_0 and A_0).
 //
 // Based on that data, send and ack rate are estimated as:
-//   send_rate = (bytes(S_1) - bytes(S_0)) / (time(S_1) - time(S_0))
-//   ack_rate = (bytes(A_1) - bytes(A_0)) / (time(A_1) - time(A_0))
+//
+//	send_rate = (bytes(S_1) - bytes(S_0)) / (time(S_1) - time(S_0))
+//	ack_rate = (bytes(A_1) - bytes(A_0)) / (time(A_1) - time(A_0))
 //
 // Here, the ack rate is intuitively the rate we want to treat as bandwidth.
 // However, in certain cases (e.g. ack compression) the ack rate at a point may
 // end up higher than the rate at which the data was originally sent, which is
 // not indicative of the real bandwidth. Hence, we use the send rate as an upper
 // bound, and the sample value is
-//   rate_sample = min(send_rate, ack_rate)
+//
+//	rate_sample = min(send_rate, ack_rate)
 //
 // An important edge case handled by the sampler is tracking the app-limited
 // samples. There are multiple meaning of "app-limited" used interchangeably,
@@ -308,6 +310,14 @@ func (s *BandwidthSampler) OnPacketLost(packetNumber protocol.PacketNumber) Send
 	}
 
 	return sendTimeState
+}
+
+func (s *BandwidthSampler) OnPacketDiscarded(packetNumber protocol.PacketNumber) protocol.ByteCount {
+	_, sentPacket := s.connectionStats.Remove(packetNumber)
+	if sentPacket != nil {
+		return sentPacket.size
+	}
+	return 0
 }
 
 // OnAppLimited Informs the sampler that the connection is currently app-limited, causing
