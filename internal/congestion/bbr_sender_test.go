@@ -163,12 +163,15 @@ func TestBBRECNDoesNotDiscardBandwidthSample(t *testing.T) {
 	var clock mockClock
 	clock.Advance(time.Millisecond)
 	rttStats := utils.NewRTTStats()
+	connStats := &utils.ConnectionStats{}
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, connStats, initialMaxDatagramSize)
 
 	bbr.OnPacketSent(clock.Now(), initialMaxDatagramSize, 1, initialMaxDatagramSize, true)
 	bbr.OnCongestionEvent(1, 0, initialMaxDatagramSize)
+	require.Zero(t, connStats.PacketsLost.Load())
+	require.Zero(t, connStats.BytesLost.Load())
 
 	clock.Advance(50 * time.Millisecond)
 	bbr.OnPacketAcked(1, initialMaxDatagramSize, initialMaxDatagramSize, clock.Now())

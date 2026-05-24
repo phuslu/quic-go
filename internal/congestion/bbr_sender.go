@@ -396,10 +396,9 @@ func (b *bbrSender) OnPacketAcked(number protocol.PacketNumber, ackedBytes proto
 }
 
 func (b *bbrSender) OnCongestionEvent(number protocol.PacketNumber, lostBytes protocol.ByteCount, priorInFlight protocol.ByteCount) {
-	b.connStats.PacketsLost.Add(1)
-	b.connStats.BytesLost.Add(uint64(lostBytes))
-
 	if lostBytes > 0 {
+		b.connStats.PacketsLost.Add(1)
+		b.connStats.BytesLost.Add(uint64(lostBytes))
 		b.sampler.OnPacketLost(number)
 		b.onBytesRemovedFromFlight(lostBytes)
 	}
