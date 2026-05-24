@@ -364,6 +364,60 @@ func TestBBRRecoveryEndIsNotExtendedByAck(t *testing.T) {
 	require.False(t, bbr.InRecovery())
 }
 
+func TestBBRRecoveryDoesNotGrowCongestionWindow(t *testing.T) {
+	var clock mockClock
+	rttStats := utils.NewRTTStats()
+	initialMaxDatagramSize := protocol.ByteCount(1200)
+
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
+	bbr.maxBandwidth.Update(int64(Bandwidth(100_000_000)), 1)
+	bbr.minRtt = 100 * time.Millisecond
+	bbr.sampler.totalBytesAcked = bbr.initialCongestionWindow
+
+	before := bbr.congestionWindow
+	require.Greater(t, bbr.GetTargetCongestionWindow(bbr.congestionWindowGain), before+initialMaxDatagramSize)
+
+	bbr.CalculateCongestionWindow(initialMaxDatagramSize, 0)
+	require.Equal(t, before+initialMaxDatagramSize, bbr.congestionWindow)
+
+	bbr.congestionWindow = before
+	bbr.recoveryState = CONSERVATION
+	bbr.CalculateCongestionWindow(initialMaxDatagramSize, 0)
+	require.Equal(t, before, bbr.congestionWindow)
+}
+
+func TestBBRProbeRTTUsesCurrentMaxDatagramSize(t *testing.T) {
+	var clock mockClock
+	rttStats := utils.NewRTTStats()
+	initialMaxDatagramSize := protocol.ByteCount(1200)
+
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
+	bbr.mode = PROBE_RTT
+
+	now := clock.Now()
+	bbr.bytesInFlight = bbr.ProbeRttCongestionWindow() + bbr.maxDatagramSize
+	bbr.MaybeEnterOrExitProbeRtt(now, false, false)
+	require.True(t, bbr.exitProbeRttAt.IsZero())
+
+	bbr.bytesInFlight = bbr.ProbeRttCongestionWindow() + bbr.maxDatagramSize - 1
+	bbr.MaybeEnterOrExitProbeRtt(now, false, false)
+	require.False(t, bbr.exitProbeRttAt.IsZero())
+}
+
+func TestBBRRecoveryWindowFallbackUsesCurrentDatagramSize(t *testing.T) {
+	var clock mockClock
+	rttStats := utils.NewRTTStats()
+	initialMaxDatagramSize := protocol.ByteCount(1400)
+
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
+	bbr.recoveryState = CONSERVATION
+	bbr.recoveryWindow = initialMaxDatagramSize / 2
+	bbr.minCongestionWindow = 0
+
+	bbr.CalculateRecoveryWindow(0, initialMaxDatagramSize)
+	require.Equal(t, initialMaxDatagramSize, bbr.recoveryWindow)
+}
+
 func TestBBRGetTargetCongestionWindow(t *testing.T) {
 	var clock mockClock
 	rttStats := utils.NewRTTStats()

@@ -13,24 +13,8 @@ import (
 )
 
 var (
-	// The maximum outgoing packet size allowed.
-	// The maximum packet size of any QUIC packet over IPv6, based on ethernet's max
-	// size, minus the IP and UDP headers. IPv6 has a 40 byte header, UDP adds an
-	// additional 8 bytes.  This is a total overhead of 48 bytes.  Ethernet's
-	// max packet size is 1500 bytes,  1500 - 48 = 1452.
-	MaxOutgoingPacketSize = protocol.ByteCount(1452)
-
-	// Default maximum packet size used in the Linux TCP implementation.
-	// Used in QUIC for congestion window computations in bytes.
-	MaxSegmentSize = protocol.ByteCount(protocol.InitialPacketSize)
-
 	// Default initial rtt used before any samples are received.
 	InitialRtt = 100 * time.Millisecond
-
-	// Constants based on TCP defaults.
-	// The minimum CWND to ensure delayed acks don't reduce bandwidth measurements.
-	// Does not inflate the pacing rate.
-	DefaultMinimumCongestionWindow = 4 * protocol.ByteCount(protocol.InitialPacketSize)
 
 	// The gain used for the STARTUP, equal to 2/ln(2).
 	DefaultHighGain = 2.885
@@ -700,7 +684,7 @@ func (b *bbrSender) MaybeEnterOrExitProbeRtt(now monotime.Time, isRoundStart, mi
 	if b.mode == PROBE_RTT {
 		b.sampler.OnAppLimited()
 		if b.exitProbeRttAt.IsZero() {
-			if b.bytesInFlight < b.ProbeRttCongestionWindow()+MaxOutgoingPacketSize {
+			if b.bytesInFlight < b.ProbeRttCongestionWindow()+b.maxDatagramSize {
 				b.exitProbeRttAt = now.Add(ProbeRttTime)
 				b.probeRttRoundPassed = false
 			}
@@ -791,9 +775,13 @@ func (b *bbrSender) CalculateCongestionWindow(ackedBytes, excessAcked protocol.B
 		targetWindow += excessAcked
 	}
 
-	addBytesAcked := true || !b.InRecovery()
+	addBytesAcked := !b.InRecovery() || (b.rateBasedStartup && b.mode == STARTUP)
 	if b.isAtFullBandwidth {
-		b.congestionWindow = min(targetWindow, b.congestionWindow+ackedBytes)
+		if addBytesAcked {
+			b.congestionWindow = min(targetWindow, b.congestionWindow+ackedBytes)
+		} else {
+			b.congestionWindow = min(targetWindow, b.congestionWindow)
+		}
 	} else if addBytesAcked && (b.congestionWindow < targetWindow || b.sampler.totalBytesAcked < b.initialCongestionWindow) {
 		b.congestionWindow += ackedBytes
 	}
@@ -819,7 +807,7 @@ func (b *bbrSender) CalculateRecoveryWindow(ackedBytes, lostBytes protocol.ByteC
 	if b.recoveryWindow >= lostBytes {
 		b.recoveryWindow -= lostBytes
 	} else {
-		b.recoveryWindow = MaxSegmentSize
+		b.recoveryWindow = b.maxDatagramSize
 	}
 
 	if b.recoveryState == GROWTH {
