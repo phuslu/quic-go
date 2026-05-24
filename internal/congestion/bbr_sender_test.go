@@ -155,8 +155,73 @@ func TestBBRPacketLoss(t *testing.T) {
 
 	require.Equal(t, uint64(1), connStats.PacketsLost.Load())
 	require.Equal(t, uint64(lostBytes), connStats.BytesLost.Load())
-	// In STARTUP, we might not enter recovery immediately
-	// Just verify the method doesn't panic
+	require.True(t, bbr.InRecovery())
+}
+
+func TestBBRToleratesSmallRandomLoss(t *testing.T) {
+	var clock mockClock
+	rttStats := utils.NewRTTStats()
+	connStats := &utils.ConnectionStats{}
+	initialMaxDatagramSize := protocol.ByteCount(1200)
+
+	bbr := NewBBRSender(&clock, rttStats, connStats, initialMaxDatagramSize)
+
+	const numPackets = 100
+	for i := protocol.PacketNumber(1); i <= numPackets; i++ {
+		bbr.OnPacketSent(clock.Now(), protocol.ByteCount(i)*initialMaxDatagramSize, i, initialMaxDatagramSize, true)
+	}
+
+	priorInFlight := protocol.ByteCount(numPackets) * initialMaxDatagramSize
+	bbr.OnCongestionEvent(1, initialMaxDatagramSize, priorInFlight)
+
+	require.Equal(t, uint64(1), connStats.PacketsLost.Load())
+	require.Equal(t, uint64(initialMaxDatagramSize), connStats.BytesLost.Load())
+	require.False(t, bbr.InRecovery())
+	require.Equal(t, initialMaxDatagramSize, bbr.lossToleranceLostBytes)
+}
+
+func TestBBREntersRecoveryWhenRandomLossToleranceIsExceeded(t *testing.T) {
+	var clock mockClock
+	rttStats := utils.NewRTTStats()
+	connStats := &utils.ConnectionStats{}
+	initialMaxDatagramSize := protocol.ByteCount(1200)
+
+	bbr := NewBBRSender(&clock, rttStats, connStats, initialMaxDatagramSize)
+
+	const numPackets = 100
+	for i := protocol.PacketNumber(1); i <= numPackets; i++ {
+		bbr.OnPacketSent(clock.Now(), protocol.ByteCount(i)*initialMaxDatagramSize, i, initialMaxDatagramSize, true)
+	}
+
+	priorInFlight := protocol.ByteCount(numPackets) * initialMaxDatagramSize
+	bbr.OnCongestionEvent(1, initialMaxDatagramSize, priorInFlight)
+	require.False(t, bbr.InRecovery())
+
+	bbr.OnCongestionEvent(2, initialMaxDatagramSize, priorInFlight)
+	require.False(t, bbr.InRecovery())
+
+	bbr.OnCongestionEvent(3, initialMaxDatagramSize, priorInFlight)
+	require.True(t, bbr.InRecovery())
+	require.Equal(t, uint64(3), connStats.PacketsLost.Load())
+	require.Equal(t, uint64(3*initialMaxDatagramSize), connStats.BytesLost.Load())
+}
+
+func TestBBRDoesNotTolerateLossWithSmallInflight(t *testing.T) {
+	var clock mockClock
+	rttStats := utils.NewRTTStats()
+	initialMaxDatagramSize := protocol.ByteCount(1200)
+
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
+
+	const numPackets = 10
+	for i := protocol.PacketNumber(1); i <= numPackets; i++ {
+		bbr.OnPacketSent(clock.Now(), protocol.ByteCount(i)*initialMaxDatagramSize, i, initialMaxDatagramSize, true)
+	}
+
+	priorInFlight := protocol.ByteCount(numPackets) * initialMaxDatagramSize
+	bbr.OnCongestionEvent(1, initialMaxDatagramSize, priorInFlight)
+
+	require.True(t, bbr.InRecovery())
 }
 
 func TestBBRECNDoesNotDiscardBandwidthSample(t *testing.T) {

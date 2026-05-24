@@ -93,6 +93,12 @@ const (
 	GROWTH
 )
 
+const (
+	bbrLossToleranceNumerator   = 2
+	bbrLossToleranceDenominator = 100
+	bbrLossToleranceMinPackets  = 16
+)
+
 type bbrSender struct {
 	mode      bbrMode
 	clock     Clock
@@ -192,6 +198,10 @@ type bbrSender struct {
 	recoveryWindow protocol.ByteCount
 	// If true, consider all samples in recovery app-limited.
 	isAppLimitedRecovery bool
+	// Loss tolerance state for distinguishing isolated random loss from congestion.
+	lossToleranceRoundEnd    protocol.PacketNumber
+	lossToleranceLostBytes   protocol.ByteCount
+	lossToleranceInFlightMax protocol.ByteCount
 	// When true, pace at 1.5x and disable packet conservation in STARTUP.
 	slowerStartup bool
 	// When true, disables packet conservation in STARTUP.
@@ -255,6 +265,7 @@ func NewBBRSender(clock Clock, rttStats *utils.RTTStats, connStats *utils.Connec
 		numStartupRtts:            RoundTripsWithoutGrowthBeforeExitingStartup,
 		recoveryState:             NOT_IN_RECOVERY,
 		recoveryWindow:            maxCongestionWindow,
+		lossToleranceRoundEnd:     protocol.InvalidPacketNumber,
 		minRttSinceLastProbeRtt:   InfiniteRTT,
 		maxDatagramSize:           initialMaxDatagramSize,
 	}
@@ -396,20 +407,42 @@ func (b *bbrSender) OnPacketAcked(number protocol.PacketNumber, ackedBytes proto
 }
 
 func (b *bbrSender) OnCongestionEvent(number protocol.PacketNumber, lostBytes protocol.ByteCount, priorInFlight protocol.ByteCount) {
+	shouldEnterRecovery := lostBytes == 0
 	if lostBytes > 0 {
 		b.connStats.PacketsLost.Add(1)
 		b.connStats.BytesLost.Add(uint64(lostBytes))
 		b.sampler.OnPacketLost(number)
 		b.onBytesRemovedFromFlight(lostBytes)
+		shouldEnterRecovery = b.shouldEnterRecoveryForLoss(number, lostBytes, priorInFlight)
 	}
 	if b.mode == STARTUP && b.startupRateReductionMultiplier != 0 {
 		b.startupBytesLost += lostBytes
 	}
 
+	if !shouldEnterRecovery {
+		return
+	}
 	b.UpdateRecoveryState(number, true, false)
 
 	// Recalculate recovery window
 	b.CalculateRecoveryWindow(0, lostBytes)
+}
+
+func (b *bbrSender) shouldEnterRecoveryForLoss(number protocol.PacketNumber, lostBytes, priorInFlight protocol.ByteCount) bool {
+	if b.InRecovery() {
+		return true
+	}
+	if priorInFlight <= 0 || priorInFlight < bbrLossToleranceMinPackets*b.maxDatagramSize {
+		return true
+	}
+	if b.lossToleranceRoundEnd == protocol.InvalidPacketNumber || number > b.lossToleranceRoundEnd {
+		b.lossToleranceRoundEnd = b.lastSendPacket
+		b.lossToleranceLostBytes = 0
+		b.lossToleranceInFlightMax = 0
+	}
+	b.lossToleranceLostBytes += lostBytes
+	b.lossToleranceInFlightMax = max(b.lossToleranceInFlightMax, priorInFlight)
+	return b.lossToleranceLostBytes*bbrLossToleranceDenominator > b.lossToleranceInFlightMax*bbrLossToleranceNumerator
 }
 
 func (b *bbrSender) OnPacketDiscarded(number protocol.PacketNumber) {
