@@ -94,9 +94,10 @@ const (
 )
 
 const (
-	bbrLossToleranceNumerator   = 2
-	bbrLossToleranceDenominator = 100
-	bbrLossToleranceMinPackets  = 16
+	bbrLossToleranceNumerator     = 2
+	bbrFullBandwidthLossTolerance = 3
+	bbrLossToleranceDenominator   = 100
+	bbrLossToleranceMinPackets    = 16
 )
 
 type bbrSender struct {
@@ -442,7 +443,11 @@ func (b *bbrSender) shouldEnterRecoveryForLoss(number protocol.PacketNumber, los
 	}
 	b.lossToleranceLostBytes += lostBytes
 	b.lossToleranceInFlightMax = max(b.lossToleranceInFlightMax, priorInFlight)
-	return b.lossToleranceLostBytes*bbrLossToleranceDenominator > b.lossToleranceInFlightMax*bbrLossToleranceNumerator
+	tolerance := bbrLossToleranceNumerator
+	if b.isAtFullBandwidth {
+		tolerance = bbrFullBandwidthLossTolerance
+	}
+	return b.lossToleranceLostBytes*bbrLossToleranceDenominator > b.lossToleranceInFlightMax*protocol.ByteCount(tolerance)
 }
 
 func (b *bbrSender) OnPacketDiscarded(number protocol.PacketNumber) {
