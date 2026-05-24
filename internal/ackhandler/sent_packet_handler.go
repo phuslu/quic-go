@@ -134,7 +134,8 @@ func NewSentPacketHandler(
 	congestion := congestion.NewBBRSender(
 		congestion.DefaultClock{},
 		rttStats,
-		protocol.ByteCount(protocol.InitialPacketSize),
+		connStats,
+		initialMaxDatagramSize,
 	)
 
 	h := &sentPacketHandler{
@@ -1172,7 +1173,8 @@ func (h *sentPacketHandler) MigratedPath(now monotime.Time, initialMaxDatagramSi
 	h.congestion = congestion.NewBBRSender(
 		congestion.DefaultClock{},
 		h.rttStats,
-		protocol.ByteCount(protocol.InitialPacketSize),
+		h.connStats,
+		initialMaxDatagramSize,
 	)
 	h.setLossDetectionTimer(now)
 }

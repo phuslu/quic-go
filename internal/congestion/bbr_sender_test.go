@@ -20,13 +20,16 @@ func TestBBRSenderInterfaces(t *testing.T) {
 func TestBBRSenderInitialization(t *testing.T) {
 	var clock mockClock
 	rttStats := utils.NewRTTStats()
+	connStats := &utils.ConnectionStats{}
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, connStats, initialMaxDatagramSize)
 
 	require.NotNil(t, bbr)
 	require.True(t, bbr.InSlowStart())
+	require.Same(t, connStats, bbr.connStats)
 	require.Equal(t, initialMaxDatagramSize, bbr.maxDatagramSize)
+	require.Equal(t, initialMaxDatagramSize, bbr.pacer.maxDatagramSize)
 	require.NotNil(t, bbr.sampler)
 	require.NotNil(t, bbr.pacer)
 	require.NotNil(t, bbr.maxBandwidth)
@@ -38,7 +41,7 @@ func TestBBRStartupPhase(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	require.True(t, bbr.InSlowStart())
 	require.False(t, bbr.InRecovery())
@@ -50,7 +53,7 @@ func TestBBRDebugMethods(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	// Test debug interface methods
 	require.True(t, bbr.InSlowStart())
@@ -66,7 +69,7 @@ func TestBBRPacketSendAndAck(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	// Send a packet
 	packetNumber := protocol.PacketNumber(1)
@@ -91,7 +94,7 @@ func TestBBRIgnoresNonAckElicitingPackets(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 	bbr.OnPacketSent(clock.Now(), 1000, 1, 1000, true)
 	require.Equal(t, protocol.PacketNumber(1), bbr.lastSendPacket)
 	require.Equal(t, protocol.PacketNumber(1), bbr.sampler.lastSendPacket)
@@ -109,7 +112,7 @@ func TestBBRTracksBytesInFlight(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	bbr.OnPacketSent(clock.Now(), 1000, 1, 1000, true)
 	require.Equal(t, protocol.ByteCount(1000), bbr.bytesInFlight)
@@ -133,9 +136,10 @@ func TestBBRTracksBytesInFlight(t *testing.T) {
 func TestBBRPacketLoss(t *testing.T) {
 	var clock mockClock
 	rttStats := utils.NewRTTStats()
+	connStats := &utils.ConnectionStats{}
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, connStats, initialMaxDatagramSize)
 
 	// Send some packets
 	for i := protocol.PacketNumber(1); i <= 10; i++ {
@@ -149,6 +153,8 @@ func TestBBRPacketLoss(t *testing.T) {
 
 	bbr.OnCongestionEvent(lostPacket, lostBytes, priorInFlight)
 
+	require.Equal(t, uint64(1), connStats.PacketsLost.Load())
+	require.Equal(t, uint64(lostBytes), connStats.BytesLost.Load())
 	// In STARTUP, we might not enter recovery immediately
 	// Just verify the method doesn't panic
 }
@@ -159,7 +165,7 @@ func TestBBRECNDoesNotDiscardBandwidthSample(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	bbr.OnPacketSent(clock.Now(), initialMaxDatagramSize, 1, initialMaxDatagramSize, true)
 	bbr.OnCongestionEvent(1, 0, initialMaxDatagramSize)
@@ -175,7 +181,7 @@ func TestBBRApplicationLimited(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 	require.False(t, bbr.sampler.isAppLimited)
 
 	bbr.OnApplicationLimited()
@@ -187,7 +193,7 @@ func TestBBRCanSend(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	// With no bytes in flight, should be able to send
 	require.True(t, bbr.CanSend(0))
@@ -205,7 +211,7 @@ func TestBBRSetMaxDatagramSize(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	newSize := protocol.ByteCount(1400)
 	bbr.SetMaxDatagramSize(newSize)
@@ -223,7 +229,7 @@ func TestBBRSetMaxDatagramSizeCanDecrease(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(protocol.InitialPacketSize)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	newSize := protocol.ByteCount(protocol.MinInitialPacketSize)
 	require.NotPanics(t, func() {
@@ -242,7 +248,7 @@ func TestBBRMaxCongestionWindowSupportsHighBDP(t *testing.T) {
 	var clock mockClock
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	const (
 		bandwidth900Mbps = Bandwidth(900_000_000)
@@ -258,7 +264,7 @@ func TestBBRTimeUntilSend(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	// TimeUntilSend should return a monotime value
 	timeUntilSend := bbr.TimeUntilSend(0)
@@ -270,7 +276,7 @@ func TestBBRHasPacingBudget(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	// Initially should have pacing budget
 	hasBudget := bbr.HasPacingBudget((&clock).Now())
@@ -283,7 +289,7 @@ func TestBBRModeTransitions(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	// Start in STARTUP
 	require.True(t, bbr.InSlowStart())
@@ -308,7 +314,7 @@ func TestBBRRecoveryState(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	// Send some packets first
 	bbr.lastSendPacket = protocol.PacketNumber(10)
@@ -342,7 +348,7 @@ func TestBBRRecoveryEndIsNotExtendedByAck(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 	bbr.lastSendPacket = 10
 
 	bbr.UpdateRecoveryState(5, true, false)
@@ -363,7 +369,7 @@ func TestBBRGetTargetCongestionWindow(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	// With no bandwidth estimate, should use initial congestion window
 	targetCwnd := bbr.GetTargetCongestionWindow(1.0)

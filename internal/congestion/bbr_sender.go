@@ -110,9 +110,10 @@ const (
 )
 
 type bbrSender struct {
-	mode     bbrMode
-	clock    Clock
-	rttStats *utils.RTTStats
+	mode      bbrMode
+	clock     Clock
+	rttStats  *utils.RTTStats
+	connStats *utils.ConnectionStats
 	// Pacer for pacing packets
 	pacer *pacer
 	// Maximum datagram size
@@ -245,12 +246,13 @@ var (
 	_ SendAlgorithmWithDebugInfos = &bbrSender{}
 )
 
-func NewBBRSender(clock Clock, rttStats *utils.RTTStats, initialMaxDatagramSize protocol.ByteCount) *bbrSender {
+func NewBBRSender(clock Clock, rttStats *utils.RTTStats, connStats *utils.ConnectionStats, initialMaxDatagramSize protocol.ByteCount) *bbrSender {
 	initialCongestionWindow := 32 * initialMaxDatagramSize
 	maxCongestionWindow := bbrMaxCongestionWindow(initialMaxDatagramSize)
 
 	b := &bbrSender{
 		rttStats:                  rttStats,
+		connStats:                 connStats,
 		mode:                      STARTUP,
 		clock:                     clock,
 		sampler:                   NewBandwidthSampler(),
@@ -282,6 +284,7 @@ func NewBBRSender(clock Clock, rttStats *utils.RTTStats, initialMaxDatagramSize 
 		// Fallback to bandwidth estimate if pacing rate not set yet
 		return b.BandwidthEstimate()
 	})
+	b.pacer.SetMaxDatagramSize(initialMaxDatagramSize)
 
 	return b
 }
@@ -409,6 +412,9 @@ func (b *bbrSender) OnPacketAcked(number protocol.PacketNumber, ackedBytes proto
 }
 
 func (b *bbrSender) OnCongestionEvent(number protocol.PacketNumber, lostBytes protocol.ByteCount, priorInFlight protocol.ByteCount) {
+	b.connStats.PacketsLost.Add(1)
+	b.connStats.BytesLost.Add(uint64(lostBytes))
+
 	if lostBytes > 0 {
 		b.sampler.OnPacketLost(number)
 		b.onBytesRemovedFromFlight(lostBytes)

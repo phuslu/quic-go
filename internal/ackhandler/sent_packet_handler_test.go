@@ -107,6 +107,28 @@ func TestSentPacketHandlerSendAndAcknowledge(t *testing.T) {
 	})
 }
 
+func TestSentPacketHandlerUsesInitialMaxDatagramSizeForCongestion(t *testing.T) {
+	const initialMaxDatagramSize protocol.ByteCount = 1400
+	sph := NewSentPacketHandler(
+		0,
+		initialMaxDatagramSize,
+		utils.NewRTTStats(),
+		&utils.ConnectionStats{},
+		false,
+		false,
+		nil,
+		protocol.PerspectiveClient,
+		nil,
+		utils.DefaultLogger,
+	)
+
+	require.Equal(t, 32*initialMaxDatagramSize, sph.(*sentPacketHandler).congestion.GetCongestionWindow())
+
+	const migratedMaxDatagramSize protocol.ByteCount = 1200
+	sph.MigratedPath(monotime.Now(), migratedMaxDatagramSize)
+	require.Equal(t, 32*migratedMaxDatagramSize, sph.(*sentPacketHandler).congestion.GetCongestionWindow())
+}
+
 func testSentPacketHandlerSendAndAcknowledge(t *testing.T, encLevel protocol.EncryptionLevel) {
 	sph := NewSentPacketHandler(
 		0,

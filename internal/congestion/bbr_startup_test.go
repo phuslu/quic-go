@@ -17,7 +17,7 @@ func TestBBRStartupPacingInitialization(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	// Verify we're in startup mode
 	require.True(t, bbr.InSlowStart())
@@ -51,7 +51,7 @@ func TestBBRStartupPacingWithRTTSample(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	// Send and ack first packet to get RTT sample
 	clock.Advance(time.Millisecond)
@@ -78,7 +78,7 @@ func TestBBRStartupPipeUtilization(t *testing.T) {
 	rttStats := utils.NewRTTStats()
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	// Simulate sending packets to fill the pipe
 	now := clock.Now()
@@ -109,7 +109,7 @@ func TestBBRStartupBandwidthGrowth(t *testing.T) {
 	initialMaxDatagramSize := protocol.ByteCount(1200)
 	rtt := 40 * time.Millisecond
 
-	bbr := NewBBRSender(&clock, rttStats, initialMaxDatagramSize)
+	bbr := NewBBRSender(&clock, rttStats, &utils.ConnectionStats{}, initialMaxDatagramSize)
 
 	// Simulate several round trips
 	now := clock.Now()
