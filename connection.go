@@ -2564,6 +2564,9 @@ func (c *Conn) sendPacketsWithoutGSO(now monotime.Time) error {
 		ecn := c.sentPacketHandler.ECNMode(true)
 		if _, err := c.appendOneShortHeaderPacket(buf, c.maxPacketSize(), ecn, now); err != nil {
 			if err == errNothingToPack {
+				if appLimited, ok := c.sentPacketHandler.(interface{ OnApplicationLimited() }); ok {
+					appLimited.OnApplicationLimited()
+				}
 				buf.Release()
 				return nil
 			}
@@ -2605,6 +2608,14 @@ func (c *Conn) sendPacketsWithGSO(now monotime.Time) error {
 		if err != nil {
 			if err != errNothingToPack {
 				return err
+			}
+			// Running out of data to send mid-batch means the connection is
+			// application-limited. Marking it here (and not only when the batch
+			// is empty) makes sure the congestion controller discounts the
+			// artificially low bandwidth samples taken across the ensuing
+			// quiescence period.
+			if appLimited, ok := c.sentPacketHandler.(interface{ OnApplicationLimited() }); ok {
+				appLimited.OnApplicationLimited()
 			}
 			if buf.Len() == 0 {
 				buf.Release()
