@@ -58,6 +58,21 @@ func (t *packetTracker) NewPingFrame(pn protocol.PacketNumber) Frame {
 	}
 }
 
+type discardRecordingSender struct {
+	*mocks.MockSendAlgorithmWithDebugInfos
+	discarded []protocol.PacketNumber
+}
+
+func newDiscardRecordingSender(ctrl *gomock.Controller) *discardRecordingSender {
+	return &discardRecordingSender{
+		MockSendAlgorithmWithDebugInfos: mocks.NewMockSendAlgorithmWithDebugInfos(ctrl),
+	}
+}
+
+func (s *discardRecordingSender) OnPacketDiscarded(packetNumber protocol.PacketNumber) {
+	s.discarded = append(s.discarded, packetNumber)
+}
+
 func (h *sentPacketHandler) getBytesInFlight() protocol.ByteCount {
 	return h.bytesInFlight
 }
@@ -160,6 +175,84 @@ func testSentPacketHandlerSendAndAcknowledge(t *testing.T, encLevel protocol.Enc
 	)
 	require.ErrorIs(t, err, &qerr.TransportError{ErrorCode: qerr.ProtocolViolation})
 	require.ErrorContains(t, err, "received ACK for an unsent packet")
+}
+
+func TestSentPacketHandlerUsesCongestionPacketNumbersAcrossPacketNumberSpaces(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	cong := mocks.NewMockSendAlgorithmWithDebugInfos(mockCtrl)
+	cong.EXPECT().MaybeExitSlowStart().AnyTimes()
+	sph := NewSentPacketHandler(
+		0,
+		1200,
+		utils.NewRTTStats(),
+		&utils.ConnectionStats{},
+		false,
+		false,
+		nil,
+		protocol.PerspectiveClient,
+		nil,
+		utils.DefaultLogger,
+	)
+	sph.(*sentPacketHandler).congestion = cong
+
+	now := monotime.Now()
+	sendPacket := func(encLevel protocol.EncryptionLevel, congestionPacketNumber protocol.PacketNumber) protocol.PacketNumber {
+		t.Helper()
+		pn := sph.PopPacketNumber(encLevel)
+		cong.EXPECT().OnPacketSent(now, gomock.Any(), congestionPacketNumber, protocol.ByteCount(1200), true)
+		sph.SentPacket(now, pn, protocol.InvalidPacketNumber, nil, []Frame{{Frame: &wire.PingFrame{}}}, encLevel, protocol.ECNNon, 1200, false, false)
+		return pn
+	}
+
+	initialPN := sendPacket(protocol.EncryptionInitial, 0)
+	handshakePN := sendPacket(protocol.EncryptionHandshake, 1)
+	oneRTTPN := sendPacket(protocol.Encryption1RTT, 2)
+	require.Zero(t, initialPN)
+	require.Zero(t, handshakePN)
+	require.Zero(t, oneRTTPN)
+
+	ackPacket := func(encLevel protocol.EncryptionLevel, pn, congestionPacketNumber protocol.PacketNumber) {
+		t.Helper()
+		ackTime := now.Add(time.Millisecond)
+		cong.EXPECT().OnPacketAcked(congestionPacketNumber, protocol.ByteCount(1200), gomock.Any(), ackTime)
+		_, err := sph.ReceivedAck(&wire.AckFrame{AckRanges: ackRanges(pn)}, encLevel, ackTime)
+		require.NoError(t, err)
+	}
+
+	ackPacket(protocol.EncryptionInitial, initialPN, 0)
+	ackPacket(protocol.EncryptionHandshake, handshakePN, 1)
+	ackPacket(protocol.Encryption1RTT, oneRTTPN, 2)
+}
+
+func TestSentPacketHandlerDiscardsCongestionPacketNumbersWhenDroppingPacketNumberSpace(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	cong := newDiscardRecordingSender(mockCtrl)
+	sph := NewSentPacketHandler(
+		0,
+		1200,
+		utils.NewRTTStats(),
+		&utils.ConnectionStats{},
+		false,
+		false,
+		nil,
+		protocol.PerspectiveClient,
+		nil,
+		utils.DefaultLogger,
+	)
+	sph.(*sentPacketHandler).congestion = cong
+
+	now := monotime.Now()
+	initialPN := sph.PopPacketNumber(protocol.EncryptionInitial)
+	cong.EXPECT().OnPacketSent(now, gomock.Any(), protocol.PacketNumber(0), protocol.ByteCount(1200), true)
+	sph.SentPacket(now, initialPN, protocol.InvalidPacketNumber, nil, []Frame{{Frame: &wire.PingFrame{}}}, protocol.EncryptionInitial, protocol.ECNNon, 1200, false, false)
+	handshakePN := sph.PopPacketNumber(protocol.EncryptionHandshake)
+	cong.EXPECT().OnPacketSent(now, gomock.Any(), protocol.PacketNumber(1), protocol.ByteCount(1200), true)
+	sph.SentPacket(now, handshakePN, protocol.InvalidPacketNumber, nil, []Frame{{Frame: &wire.PingFrame{}}}, protocol.EncryptionHandshake, protocol.ECNNon, 1200, false, false)
+
+	sph.DropPackets(protocol.EncryptionInitial, now)
+	require.Equal(t, []protocol.PacketNumber{0}, cong.discarded)
+	sph.DropPackets(protocol.EncryptionHandshake, now)
+	require.Equal(t, []protocol.PacketNumber{0, 1}, cong.discarded)
 }
 
 func TestSentPacketHandlerAcknowledgeSkippedPacket(t *testing.T) {
@@ -1345,7 +1438,7 @@ func TestSentPacketHandlerECN(t *testing.T) {
 
 	gomock.InOrder(
 		ecnHandler.EXPECT().HandleNewlyAcked(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(true),
-		cong.EXPECT().OnCongestionEvent(pns[0], protocol.ByteCount(0), gomock.Any()),
+		cong.EXPECT().OnCongestionEvent(gomock.Any(), protocol.ByteCount(0), gomock.Any()),
 	)
 	_, err = sph.ReceivedAck(&wire.AckFrame{AckRanges: ackRanges(pns[0])}, protocol.Encryption1RTT, now.Add(100*time.Millisecond))
 	require.NoError(t, err)
