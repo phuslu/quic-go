@@ -2570,6 +2570,9 @@ func (c *Conn) sendPacketsWithoutGSO(now monotime.Time) error {
 		ecn := c.sentPacketHandler.ECNMode(true)
 		if _, err := c.appendOneShortHeaderPacket(buf, c.maxPacketSize(), ecn, now); err != nil {
 			if err == errNothingToPack {
+				if appLimited, ok := c.sentPacketHandler.(interface{ OnApplicationLimited() }); ok {
+					appLimited.OnApplicationLimited()
+				}
 				buf.Release()
 				return nil
 			}
@@ -2613,6 +2616,9 @@ func (c *Conn) sendPacketsWithGSO(now monotime.Time) error {
 				return err
 			}
 			if buf.Len() == 0 {
+				if appLimited, ok := c.sentPacketHandler.(interface{ OnApplicationLimited() }); ok {
+					appLimited.OnApplicationLimited()
+				}
 				buf.Release()
 				return nil
 			}

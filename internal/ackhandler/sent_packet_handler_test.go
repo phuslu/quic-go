@@ -1377,7 +1377,7 @@ func TestSentPacketHandlerECN(t *testing.T) {
 
 	gomock.InOrder(
 		ecnHandler.EXPECT().HandleNewlyAcked(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(true),
-		cong.EXPECT().OnCongestionEvent(pns[0], protocol.ByteCount(0), gomock.Any()),
+		cong.EXPECT().OnCongestionEvent(gomock.Any(), protocol.ByteCount(0), gomock.Any()),
 	)
 	_, err = sph.ReceivedAck(&wire.AckFrame{AckRanges: ackRanges(pns[0])}, protocol.Encryption1RTT, now.Add(100*time.Millisecond))
 	require.NoError(t, err)

@@ -87,8 +87,12 @@ func (p *pacer) TimeUntilSend(rate Bandwidth) monotime.Time {
 	if p.lastSentTime.IsZero() || p.budgetAtLastSent >= p.maxDatagramSize {
 		return 0
 	}
-	diff := 1e9 * uint64(p.maxDatagramSize-p.budgetAtLastSent)
 	bw := uint64(rate / BytesPerSecond)
+	if bw == 0 {
+		// No bandwidth estimate yet, allow immediate sending.
+		return 0
+	}
+	diff := 1e9 * uint64(p.maxDatagramSize-p.budgetAtLastSent)
 	// We might need to round up this value.
 	// Otherwise, we might have a budget (slightly) smaller than the datagram size when the timer expires.
 	d := diff / bw
