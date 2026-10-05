@@ -122,7 +122,7 @@ type bbrSender struct {
 	bytesInFlight protocol.ByteCount
 	// Bandwidth sampler provides BBR with the bandwidth measurements at
 	// individual points.
-	sampler *BandwidthSampler
+	sampler BandwidthSampler
 	// The number of the round trips that have occurred during the connection.
 	roundTripCount int64
 	// The packet number of the most recently sent packet.
@@ -132,9 +132,9 @@ type bbrSender struct {
 	currentRoundTripEnd protocol.PacketNumber
 	// The filter that tracks the maximum bandwidth over the multiple recent
 	// round-trips.
-	maxBandwidth *WindowedFilter
+	maxBandwidth WindowedFilter
 	// Tracks the maximum number of bytes acked faster than the sending rate.
-	maxAckHeight *WindowedFilter
+	maxAckHeight WindowedFilter
 	// The time this aggregation started and the number of bytes acked during it.
 	aggregationEpochStartTime monotime.Time
 	aggregationEpochBytes     protocol.ByteCount
@@ -264,9 +264,8 @@ func NewBBRSender(
 		rttStats:                  rttStats,
 		mode:                      STARTUP,
 		clock:                     clock,
-		sampler:                   NewBandwidthSampler(),
-		maxBandwidth:              NewWindowedFilter(int64(BandwidthWindowSize), MaxFilter),
-		maxAckHeight:              NewWindowedFilter(int64(BandwidthWindowSize), MaxFilter),
+		maxBandwidth:              NewWindowedFilter(int64(BandwidthWindowSize), false),
+		maxAckHeight:              NewWindowedFilter(int64(BandwidthWindowSize), false),
 		congestionWindow:          initialCongestionWindow,
 		initialCongestionWindow:   initialCongestionWindow,
 		maxCongestionWindow:       maxCongestionWindow,

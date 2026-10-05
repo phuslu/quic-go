@@ -16,8 +16,9 @@ package congestion
 type WindowedFilter struct {
 	// Time length of window.
 	windowLength int64
-	estimates    []Sample
-	comparator   func(int64, int64) bool
+	estimates    [3]Sample
+	// isMinFilter selects MinFilter, otherwise MaxFilter is used
+	isMinFilter bool
 }
 
 type Sample struct {
@@ -37,12 +38,18 @@ func MinFilter(a, b int64) bool {
 	return a <= b
 }
 
-func NewWindowedFilter(windowLength int64, comparator func(int64, int64) bool) *WindowedFilter {
-	return &WindowedFilter{
+func NewWindowedFilter(windowLength int64, isMinFilter bool) WindowedFilter {
+	return WindowedFilter{
 		windowLength: windowLength,
-		estimates:    make([]Sample, 3),
-		comparator:   comparator,
+		isMinFilter:  isMinFilter,
 	}
+}
+
+func (f *WindowedFilter) comparator(a, b int64) bool {
+	if f.isMinFilter {
+		return MinFilter(a, b)
+	}
+	return MaxFilter(a, b)
 }
 
 // Changes the window length.  Does not update any current samples.

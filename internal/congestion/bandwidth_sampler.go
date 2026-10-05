@@ -66,8 +66,8 @@ type BandwidthSample struct {
 	stateAtSend SendTimeState
 }
 
-func NewBandwidthSample() *BandwidthSample {
-	return &BandwidthSample{
+func NewBandwidthSample() BandwidthSample {
+	return BandwidthSample{
 		// FIXME: the default value of original code is zero.
 		rtt: InfiniteRTT,
 	}
@@ -180,15 +180,11 @@ type BandwidthSampler struct {
 	endOfAppLimitedPhase protocol.PacketNumber
 	// Record of the connection state at the point where each packet in flight was
 	// sent, indexed by the packet number.
-	connectionStats *ConnectionStates
+	connectionStats ConnectionStates
 }
 
 func NewBandwidthSampler() *BandwidthSampler {
-	return &BandwidthSampler{
-		connectionStats: &ConnectionStates{
-			stats: make(map[protocol.PacketNumber]*ConnectionStateOnSentPacket),
-		},
-	}
+	return &BandwidthSampler{}
 }
 
 // OnPacketSent Inputs the sent packet information into the sampler. Assumes that all
@@ -225,21 +221,17 @@ func (s *BandwidthSampler) OnPacketSent(sentTime monotime.Time, lastSentPacket p
 // OnPacketAcked Notifies the sampler that the |lastAckedPacket| is acknowledged. Returns a
 // bandwidth sample. If no bandwidth sample is available,
 // QuicBandwidth::Zero() is returned.
-func (s *BandwidthSampler) OnPacketAcked(ackTime monotime.Time, lastAckedPacket protocol.PacketNumber) *BandwidthSample {
-	sentPacketState := s.connectionStats.Get(lastAckedPacket)
-	if sentPacketState == nil {
+func (s *BandwidthSampler) OnPacketAcked(ackTime monotime.Time, lastAckedPacket protocol.PacketNumber) BandwidthSample {
+	sentPacketState, ok := s.connectionStats.Remove(lastAckedPacket)
+	if !ok {
 		return NewBandwidthSample()
 	}
-
-	sample := s.onPacketAckedInner(ackTime, lastAckedPacket, sentPacketState)
-	s.connectionStats.Remove(lastAckedPacket)
-
-	return sample
+	return s.onPacketAckedInner(ackTime, lastAckedPacket, &sentPacketState)
 }
 
 // onPacketAckedInner Handles the actual bandwidth calculations, whereas the outer method handles
 // retrieving and removing |sentPacket|.
-func (s *BandwidthSampler) onPacketAckedInner(ackTime monotime.Time, lastAckedPacket protocol.PacketNumber, sentPacket *ConnectionStateOnSentPacket) *BandwidthSample {
+func (s *BandwidthSampler) onPacketAckedInner(ackTime monotime.Time, lastAckedPacket protocol.PacketNumber, sentPacket *ConnectionStateOnSentPacket) BandwidthSample {
 	s.totalBytesAcked += sentPacket.size
 
 	s.totalBytesSentAtLastAckedPacket = sentPacket.sendTimeState.totalBytesSent
@@ -288,7 +280,7 @@ func (s *BandwidthSampler) onPacketAckedInner(ackTime monotime.Time, lastAckedPa
 	// Note: this sample does not account for delayed acknowledgement time.  This
 	// means that the RTT measurements here can be artificially high, especially
 	// on low bandwidth connections.
-	sample := &BandwidthSample{
+	sample := BandwidthSample{
 		bandwidth: minBandwidth(sendRate, ackRate),
 		rtt:       ackTime.Sub(sentPacket.sendTime),
 	}
@@ -300,21 +292,20 @@ func (s *BandwidthSampler) onPacketAckedInner(ackTime monotime.Time, lastAckedPa
 // OnPacketLost Informs the sampler that a packet is considered lost and it should no
 // longer keep track of it.
 func (s *BandwidthSampler) OnPacketLost(packetNumber protocol.PacketNumber) SendTimeState {
-	ok, sentPacket := s.connectionStats.Remove(packetNumber)
+	sentPacket, ok := s.connectionStats.Remove(packetNumber)
 	sendTimeState := SendTimeState{
 		isValid: ok,
 	}
-	if sentPacket != nil {
+	if ok {
 		s.totalBytesLost += sentPacket.size
-		SentPacketToSendTimeState(sentPacket, &sendTimeState)
+		SentPacketToSendTimeState(&sentPacket, &sendTimeState)
 	}
 
 	return sendTimeState
 }
 
 func (s *BandwidthSampler) OnPacketDiscarded(packetNumber protocol.PacketNumber) protocol.ByteCount {
-	_, sentPacket := s.connectionStats.Remove(packetNumber)
-	if sentPacket != nil {
+	if sentPacket, ok := s.connectionStats.Remove(packetNumber); ok {
 		return sentPacket.size
 	}
 	return 0
@@ -340,34 +331,109 @@ func SentPacketToSendTimeState(sentPacket *ConnectionStateOnSentPacket, sendTime
 
 // ConnectionStates Record of the connection state at the point where each packet in flight was
 // sent, indexed by the packet number.
-// FIXME: using LinkedList replace map to fast remove all the packets lower than the specified packet number.
+// It is a ring buffer of values, modeled after quiche's PacketNumberIndexedQueue:
+// packets are inserted in increasing packet number order and are usually removed
+// close to the front, so no per-packet allocations are needed once warmed up.
 type ConnectionStates struct {
-	stats map[protocol.PacketNumber]*ConnectionStateOnSentPacket
+	entries []connectionStateEntry
+	// index of the entry for firstPacket in entries
+	head int
+	// number of entries in use, including removed ones that are not at the front
+	length int
+	// number of entries that are present
+	numPresent  int
+	firstPacket protocol.PacketNumber
+}
+
+type connectionStateEntry struct {
+	state   ConnectionStateOnSentPacket
+	present bool
+}
+
+func (s *ConnectionStates) lastPacket() protocol.PacketNumber {
+	return s.firstPacket + protocol.PacketNumber(s.length) - 1
+}
+
+func (s *ConnectionStates) entry(packetNumber protocol.PacketNumber) *connectionStateEntry {
+	if s.length == 0 || packetNumber < s.firstPacket || packetNumber > s.lastPacket() {
+		return nil
+	}
+	e := &s.entries[(s.head+int(packetNumber-s.firstPacket))%len(s.entries)]
+	if !e.present {
+		return nil
+	}
+	return e
+}
+
+// pushBack appends an (absent) entry and returns it.
+func (s *ConnectionStates) pushBack() *connectionStateEntry {
+	if s.length == len(s.entries) {
+		newEntries := make([]connectionStateEntry, max(2*len(s.entries), 64))
+		n := copy(newEntries, s.entries[s.head:])
+		copy(newEntries[n:], s.entries[:s.head])
+		s.entries = newEntries
+		s.head = 0
+	}
+	e := &s.entries[(s.head+s.length)%len(s.entries)]
+	s.length++
+	*e = connectionStateEntry{}
+	return e
 }
 
 func (s *ConnectionStates) Insert(packetNumber protocol.PacketNumber, sentTime monotime.Time, bytes protocol.ByteCount, sampler *BandwidthSampler) bool {
-	if _, ok := s.stats[packetNumber]; ok {
+	if packetNumber == protocol.InvalidPacketNumber {
 		return false
 	}
-
-	s.stats[packetNumber] = NewConnectionStateOnSentPacket(packetNumber, sentTime, bytes, sampler)
+	if s.length == 0 {
+		s.firstPacket = packetNumber
+	} else if packetNumber <= s.lastPacket() {
+		return false
+	} else {
+		// fill gaps with absent entries
+		for s.lastPacket()+1 < packetNumber {
+			s.pushBack()
+		}
+	}
+	e := s.pushBack()
+	e.present = true
+	initConnectionStateOnSentPacket(&e.state, packetNumber, sentTime, bytes, sampler)
+	s.numPresent++
 	return true
 }
 
+// Get returns the state of the packet. The returned pointer is only valid until
+// the next call to Insert or Remove.
 func (s *ConnectionStates) Get(packetNumber protocol.PacketNumber) *ConnectionStateOnSentPacket {
-	return s.stats[packetNumber]
-}
-
-func (s *ConnectionStates) Remove(packetNumber protocol.PacketNumber) (bool, *ConnectionStateOnSentPacket) {
-	state, ok := s.stats[packetNumber]
-	if ok {
-		delete(s.stats, packetNumber)
+	if e := s.entry(packetNumber); e != nil {
+		return &e.state
 	}
-	return ok, state
+	return nil
 }
 
-func NewConnectionStateOnSentPacket(packetNumber protocol.PacketNumber, sentTime monotime.Time, bytes protocol.ByteCount, sampler *BandwidthSampler) *ConnectionStateOnSentPacket {
-	return &ConnectionStateOnSentPacket{
+func (s *ConnectionStates) Remove(packetNumber protocol.PacketNumber) (ConnectionStateOnSentPacket, bool) {
+	e := s.entry(packetNumber)
+	if e == nil {
+		return ConnectionStateOnSentPacket{}, false
+	}
+	state := e.state
+	e.present = false
+	s.numPresent--
+	if s.numPresent == 0 {
+		s.head = 0
+		s.length = 0
+		return state, true
+	}
+	// drop removed entries from the front
+	for !s.entries[s.head].present {
+		s.head = (s.head + 1) % len(s.entries)
+		s.length--
+		s.firstPacket++
+	}
+	return state, true
+}
+
+func initConnectionStateOnSentPacket(p *ConnectionStateOnSentPacket, packetNumber protocol.PacketNumber, sentTime monotime.Time, bytes protocol.ByteCount, sampler *BandwidthSampler) {
+	*p = ConnectionStateOnSentPacket{
 		packetNumber:                    packetNumber,
 		sendTime:                        sentTime,
 		size:                            bytes,
