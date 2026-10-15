@@ -118,6 +118,8 @@ func configWithNonZeroNonFunctionFields(t *testing.T) *Config {
 			f.Set(reflect.ValueOf(&StatelessResetKey{1, 2, 3, 4}))
 		case "KeepAlivePeriod":
 			f.Set(reflect.ValueOf(time.Second))
+		case "BBROptions":
+			f.Set(reflect.ValueOf(BBROptions{RateBasedStartup: true}))
 		case "EnableDatagrams":
 			f.Set(reflect.ValueOf(true))
 		case "DisableVersionNegotiationPackets":
