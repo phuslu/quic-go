@@ -345,6 +345,7 @@ func TestSentPacketHandlerRTTAcrossPacketNumberSpaces(t *testing.T) {
 }
 
 func TestSentPacketHandlerCongestionAcrossPacketNumberSpaces(t *testing.T) {
+	t.Skip("Cubic-specific, see TestSentPacketHandlerBBRRecoveryAcrossPacketNumberSpaces")
 	var eventRecorder events.Recorder
 	sph := NewSentPacketHandler(
 		0, 1200, utils.NewRTTStats(), &utils.ConnectionStats{}, true, false,
@@ -1902,7 +1903,8 @@ func TestSentPacketHandlerSpuriousLoss(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []protocol.PacketNumber{pns[4], pns[5], pns[12], pns[16]}, packets.Acked)
 	require.Empty(t, packets.Lost)
-	require.Equal(t, window, connStats.CongestionWindow.Load())
+	// Like quiche's BBRv1, the BBR sender doesn't undo recovery on a spurious loss.
+	require.Less(t, connStats.CongestionWindow.Load(), window)
 	require.Equal(t,
 		[]qlogwriter.Event{
 			qlog.SpuriousLoss{
@@ -2001,13 +2003,15 @@ func TestSentPacketHandlerSpuriousLoss(t *testing.T) {
 	parameters.TimeThreshold = 1.25
 	require.Equal(t, []qlogwriter.Event{parameters}, eventRecorder.Events(qlog.RecoveryParametersSet{}))
 
-	// An ACK containing only the remaining lost packets can also undo the cutback.
+	// An ACK containing only the remaining lost packets doesn't change the
+	// congestion window, since BBR doesn't undo recovery.
 	eventRecorder.Clear()
-	require.Less(t, connStats.CongestionWindow.Load(), window)
+	reducedWindow := connStats.CongestionWindow.Load()
+	require.Less(t, reducedWindow, window)
 	now = now.Add(secondAckDelay)
 	_, err = sph.ReceivedAck(&wire.AckFrame{AckRanges: ackRanges(pns[14], pns[15])}, protocol.Encryption1RTT, now)
 	require.NoError(t, err)
-	require.Equal(t, window, connStats.CongestionWindow.Load())
+	require.Equal(t, reducedWindow, connStats.CongestionWindow.Load())
 	require.Empty(t, eventRecorder.Events(qlog.RecoveryParametersSet{}))
 
 	// MTU probes, path probes and ACK-only packets aren't tracked as spurious losses.

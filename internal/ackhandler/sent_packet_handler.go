@@ -140,7 +140,7 @@ var _ SentPacketHandler = &sentPacketHandler{}
 
 // clientAddressValidated indicates whether the address was validated beforehand by an address validation token.
 // If the address was validated, the amplification limit doesn't apply. It has no effect for a client.
-func NewSentPacketHandler(
+func newSentPacketHandler(
 	initialPN protocol.PacketNumber,
 	initialMaxDatagramSize protocol.ByteCount,
 	rttStats *utils.RTTStats,
@@ -426,7 +426,7 @@ func (h *sentPacketHandler) getPacketNumberSpace(space protocol.PacketNumberSpac
 	}
 }
 
-func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.EncryptionLevel, rcvTime monotime.Time) (bool /* contained 1-RTT packet */, error) {
+func (h *sentPacketHandler) receivedAck(ack *wire.AckFrame, encLevel protocol.EncryptionLevel, rcvTime monotime.Time) (bool /* contained 1-RTT packet */, error) {
 	pnSpace := h.getPacketNumberSpace(encLevel.PacketNumberSpace())
 
 	largestAcked := ack.LargestAcked()
@@ -992,7 +992,7 @@ func (h *sentPacketHandler) detectLostPackets(now monotime.Time, encLevel protoc
 	}
 }
 
-func (h *sentPacketHandler) OnLossDetectionTimeout(now monotime.Time) error {
+func (h *sentPacketHandler) onLossDetectionTimeout(now monotime.Time) error {
 	defer h.setLossDetectionTimer(now)
 
 	if h.handshakeConfirmed {
@@ -1234,7 +1234,7 @@ func (h *sentPacketHandler) ResetForRetry(now monotime.Time) {
 	h.ptoCount = 0
 }
 
-func (h *sentPacketHandler) MigratedPath(now monotime.Time, initialMaxDatagramSize protocol.ByteCount) {
+func (h *sentPacketHandler) migratedPath(now monotime.Time, initialMaxDatagramSize protocol.ByteCount) {
 	h.rttStats.ResetForPathMigration()
 	h.packetThresholdDisabled = false
 	h.timeThresholdEighths = defaultTimeThresholdEighths
