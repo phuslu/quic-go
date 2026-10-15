@@ -13,6 +13,9 @@ const maxTrackedLostPackets = 64
 type lostPacket struct {
 	PacketNumber protocol.PacketNumber
 	SendTime     monotime.Time
+
+	// CongestionPacketNumber is the packet number used by the congestion controller.
+	CongestionPacketNumber protocol.PacketNumber
 }
 
 type lostPacketTracker struct {
@@ -28,13 +31,31 @@ func newLostPacketTracker() *lostPacketTracker {
 }
 
 func (t *lostPacketTracker) Add(p protocol.PacketNumber, sendTime monotime.Time) {
+	t.AddWithCongestionPacketNumber(p, p, sendTime)
+}
+
+func (t *lostPacketTracker) AddWithCongestionPacketNumber(p, congestionPN protocol.PacketNumber, sendTime monotime.Time) {
 	if len(t.lostPackets) == maxTrackedLostPackets {
 		t.lostPackets = t.lostPackets[1:]
 	}
 	t.lostPackets = append(t.lostPackets, lostPacket{
 		PacketNumber: p,
 		SendTime:     sendTime,
+
+		CongestionPacketNumber: congestionPN,
 	})
+}
+
+// CongestionPacketNumber returns the congestion packet number of a lost packet,
+// or protocol.InvalidPacketNumber if the packet is not tracked.
+// Like Delete, it is only used when a spurious loss is detected.
+func (t *lostPacketTracker) CongestionPacketNumber(pn protocol.PacketNumber) protocol.PacketNumber {
+	for _, p := range t.lostPackets {
+		if p.PacketNumber == pn {
+			return p.CongestionPacketNumber
+		}
+	}
+	return protocol.InvalidPacketNumber
 }
 
 // Delete deletes a packet from the lost packet tracker.
