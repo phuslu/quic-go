@@ -140,7 +140,7 @@ var _ SentPacketHandler = &sentPacketHandler{}
 
 // clientAddressValidated indicates whether the address was validated beforehand by an address validation token.
 // If the address was validated, the amplification limit doesn't apply. It has no effect for a client.
-func NewSentPacketHandler(
+func newSentPacketHandler(
 	initialPN protocol.PacketNumber,
 	initialMaxDatagramSize protocol.ByteCount,
 	rttStats *utils.RTTStats,
@@ -419,13 +419,7 @@ func (h *sentPacketHandler) getPacketNumberSpace(space protocol.PacketNumberSpac
 	}
 }
 
-func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.EncryptionLevel, rcvTime monotime.Time) (bool /* contained 1-RTT packet */, error) {
-	acked1RTTPacket, err := h.receivedAck(ack, encLevel, rcvTime)
-	h.connStats.CongestionWindow.Store(uint64(h.congestion.GetCongestionWindow()))
-	return acked1RTTPacket, err
-}
-
-func (h *sentPacketHandler) receivedAck(ack *wire.AckFrame, encLevel protocol.EncryptionLevel, rcvTime monotime.Time) (bool, error) {
+func (h *sentPacketHandler) receivedAck(ack *wire.AckFrame, encLevel protocol.EncryptionLevel, rcvTime monotime.Time) (bool /* contained 1-RTT packet */, error) {
 	pnSpace := h.getPacketNumberSpace(encLevel.PacketNumberSpace())
 
 	largestAcked := ack.LargestAcked()
@@ -487,7 +481,11 @@ func (h *sentPacketHandler) receivedAck(ack *wire.AckFrame, encLevel protocol.En
 		if encLevel == protocol.Encryption1RTT && h.ecnTracker != nil && largestAcked > pnSpace.largestAcked {
 			congested := h.ecnTracker.HandleNewlyAcked(ackedPackets, int64(ack.ECT0), int64(ack.ECT1), int64(ack.ECNCE))
 			if congested {
-				h.congestion.OnCongestionEvent(largestAcked)
+				if ecnHandler, ok := h.congestion.(interface{ OnECNCongestionEvent(protocol.PacketNumber) }); ok {
+					ecnHandler.OnECNCongestionEvent(largestAcked)
+				} else {
+					h.congestion.OnCongestionEvent(largestAcked)
+				}
 			}
 		}
 
@@ -1000,7 +998,7 @@ func (h *sentPacketHandler) detectLostPackets(now monotime.Time, encLevel protoc
 	}
 }
 
-func (h *sentPacketHandler) OnLossDetectionTimeout(now monotime.Time) error {
+func (h *sentPacketHandler) onLossDetectionTimeout(now monotime.Time) error {
 	defer h.setLossDetectionTimer(now)
 
 	if h.handshakeConfirmed {
@@ -1272,7 +1270,11 @@ func (h *sentPacketHandler) MigratedPath(now monotime.Time, initialMaxDatagramSi
 	for pn := range h.hist.PathProbes() {
 		h.hist.RemovePathProbe(pn)
 	}
-	h.congestion = congestion.NewRenoSender(h.rttStats, initialMaxDatagramSize, h.qlogger)
+	var bbrOptions congestion.BBROptions
+	if s, ok := h.congestion.(interface{ Options() congestion.BBROptions }); ok {
+		bbrOptions = s.Options()
+	}
+	h.congestion = h.newBBRSender(initialMaxDatagramSize, bbrOptions)
 	h.connStats.CongestionWindow.Store(uint64(h.congestion.GetCongestionWindow()))
 	if h.ecnTracker != nil {
 		h.ecnTracker.MigratedPath(oldPathDrainTime)
